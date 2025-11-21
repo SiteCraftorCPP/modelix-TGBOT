@@ -3,6 +3,8 @@
 """
 import asyncio
 import sqlite3
+import json
+import os
 from datetime import datetime
 from telegram import Bot
 from telegram.error import TelegramError
@@ -25,6 +27,7 @@ class ModelixNotificationBot:
         self.bot = Bot(token=BOT_TOKEN)
         self.channel_id = CHANNEL_ID
         self.db_path = DJANGO_DB_PATH
+        self.state_file = 'bot_state.json'
         self.last_call_request_id = 0
         self.last_print_order_id = 0
         
@@ -171,6 +174,7 @@ class ModelixNotificationBot:
                 message = self.format_call_request(request)
                 await self.send_notification(message)
                 self.last_call_request_id = request_id
+                self.save_state()  # Сохраняем состояние после каждой заявки
                 logger.info(f"Обновлен last_call_request_id до {self.last_call_request_id}")
             
             conn.close()
@@ -206,6 +210,7 @@ class ModelixNotificationBot:
                 message = self.format_print_order(order)
                 await self.send_notification(message)
                 self.last_print_order_id = order_id
+                self.save_state()  # Сохраняем состояние после каждой заявки
                 logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
             
             conn.close()
@@ -216,8 +221,36 @@ class ModelixNotificationBot:
         except Exception as e:
             logger.error(f"Ошибка при проверке заявок на печать: {e}")
     
-    async def initialize(self):
-        """Инициализация - получить ID последних заявок"""
+    def load_state(self):
+        """Загрузить состояние из файла"""
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, 'r') as f:
+                    state = json.load(f)
+                    self.last_call_request_id = state.get('last_call_request_id', 0)
+                    self.last_print_order_id = state.get('last_print_order_id', 0)
+                    logger.info(f"Состояние загружено: звонки ID={self.last_call_request_id}, печать ID={self.last_print_order_id}")
+            else:
+                logger.info("Файл состояния не найден, начинаем с текущих максимальных ID")
+                self.initialize_from_db()
+        except Exception as e:
+            logger.error(f"Ошибка загрузки состояния: {e}")
+            self.initialize_from_db()
+    
+    def save_state(self):
+        """Сохранить состояние в файл"""
+        try:
+            state = {
+                'last_call_request_id': self.last_call_request_id,
+                'last_print_order_id': self.last_print_order_id
+            }
+            with open(self.state_file, 'w') as f:
+                json.dump(state, f)
+        except Exception as e:
+            logger.error(f"Ошибка сохранения состояния: {e}")
+    
+    def initialize_from_db(self):
+        """Инициализация из БД (только при первом запуске)"""
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
@@ -234,9 +267,22 @@ class ModelixNotificationBot:
             
             conn.close()
             
-            logger.info(f"Инициализация: последняя заявка на звонок ID={self.last_call_request_id}, "
-                       f"последняя заявка на печать ID={self.last_print_order_id}")
-            logger.info("Бот будет отслеживать только НОВЫЕ заявки после запуска")
+            # Сохранить состояние
+            self.save_state()
+            
+            logger.info(f"Инициализация из БД: звонки ID={self.last_call_request_id}, печать ID={self.last_print_order_id}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка инициализации из БД: {e}")
+            raise
+    
+    async def initialize(self):
+        """Инициализация бота"""
+        try:
+            # Загружаем состояние из файла
+            self.load_state()
+            
+            logger.info("Бот будет отслеживать только НОВЫЕ заявки после последней обработанной")
             
             # Отправить уведомление о запуске
             await self.send_notification("<b>Бот уведомлений Modelix запущен</b>\n\n"

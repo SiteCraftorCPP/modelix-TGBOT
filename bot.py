@@ -78,8 +78,6 @@ class ModelixNotificationBot:
 👤 <b>Имя:</b> {name}
 📱 <b>Телефон:</b> <code>{phone}</code>
 🕐 <b>Дата:</b> {date_str}
-
-<a href="https://3dmodelix.ru/admin/main/callrequest/{req_id}/change/">Открыть в админке</a>
 """
         return message.strip()
     
@@ -144,8 +142,6 @@ class ModelixNotificationBot:
 🛠️ <b>Услуга:</b> {service_name}
 💬 <b>Сообщение:</b> {message_preview}{ellipsis}{file_info}
 🕐 <b>Дата:</b> {date_str}
-
-<a href="https://3dmodelix.ru/admin/main/printorder/{order_id}/change/">Открыть в админке</a>
 """
         return message.strip()
     

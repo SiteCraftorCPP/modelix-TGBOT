@@ -7,7 +7,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 from config import BOT_TOKEN, CHANNEL_ID
 
-def test_bot():
+async def test_bot():
     """Тестирование подключения к боту и каналу"""
     print("Начинаем тестирование бота...")
     print(f"Токен бота: {BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}")
@@ -18,7 +18,12 @@ def test_bot():
         
         # Проверка бота
         print("\n1. Проверка токена бота...")
-        bot_info = bot.get_me()
+        try:
+            # Для новой версии (20.x)
+            bot_info = await bot.get_me()
+        except TypeError:
+            # Для старой версии (13.x)
+            bot_info = bot.get_me()
         print(f"OK Бот подключен: @{bot_info.username} ({bot_info.first_name})")
         
         # Проверка доступа к каналу
@@ -32,11 +37,20 @@ def test_bot():
 <i>Время теста: {time}</i>
 """.format(time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         
-        message = bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=test_message,
-            parse_mode='HTML'
-        )
+        try:
+            # Для новой версии (20.x)
+            message = await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=test_message,
+                parse_mode='HTML'
+            )
+        except TypeError:
+            # Для старой версии (13.x)
+            message = bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=test_message,
+                parse_mode='HTML'
+            )
         
         print(f"OK Сообщение успешно отправлено в канал (ID сообщения: {message.message_id})")
         
@@ -95,5 +109,5 @@ def test_bot():
         return False
 
 if __name__ == '__main__':
-    test_bot()
+    asyncio.run(test_bot())
 

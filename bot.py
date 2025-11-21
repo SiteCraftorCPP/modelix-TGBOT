@@ -27,7 +27,8 @@ class ModelixNotificationBot:
         self.bot = Bot(token=BOT_TOKEN)
         self.channel_id = CHANNEL_ID
         self.db_path = DJANGO_DB_PATH
-        self.state_file = 'bot_state.json'
+        # Абсолютный путь к файлу состояния
+        self.state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot_state.json')
         self.last_call_request_id = 0
         self.last_print_order_id = 0
         
@@ -73,11 +74,8 @@ class ModelixNotificationBot:
         message = f"""
 <b>{status} - ЗВОНОК</b>
 
-📞 <b>Заявка на звонок #{req_id}</b>
-
 👤 <b>Имя:</b> {name}
 📱 <b>Телефон:</b> <code>{phone}</code>
-🕐 <b>Дата:</b> {date_str}
 """
         return message.strip()
     
@@ -134,14 +132,11 @@ class ModelixNotificationBot:
         message = f"""
 <b>{status} - ПЕЧАТЬ</b>
 
-🖨️ <b>Заявка на печать #{order_id}</b>
-
 👤 <b>Имя:</b> {name}
 📱 <b>Телефон:</b> <code>{phone}</code>
 📧 <b>Email:</b> {email}
 🛠️ <b>Услуга:</b> {service_name}
 💬 <b>Сообщение:</b> {message_preview}{ellipsis}{file_info}
-🕐 <b>Дата:</b> {date_str}
 """
         return message.strip()
     

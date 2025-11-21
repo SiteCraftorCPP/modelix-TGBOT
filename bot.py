@@ -5,6 +5,7 @@ import asyncio
 import sqlite3
 import json
 import os
+import time
 from datetime import datetime
 from telegram import Bot
 from telegram.error import TelegramError
@@ -31,6 +32,8 @@ class ModelixNotificationBot:
         self.state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot_state.json')
         self.last_call_request_id = 0
         self.last_print_order_id = 0
+        # Кэш для предотвращения дублирования
+        self.recent_calls = []  # [(name, phone, timestamp), ...]
         
     def get_db_connection(self):
         """Получить соединение с БД Django"""
@@ -140,6 +143,22 @@ class ModelixNotificationBot:
 """
         return message.strip()
     
+    def is_duplicate_call(self, name, phone):
+        """Проверить, не дублируется ли заявка на звонок (создана вместе с печатью)"""
+        current_time = time.time()
+        # Очищаем старые записи (старше 2 минут)
+        self.recent_calls = [(n, p, t) for n, p, t in self.recent_calls if current_time - t < 120]
+        
+        # Проверяем есть ли такая же заявка в последние 2 минуты
+        for cached_name, cached_phone, timestamp in self.recent_calls:
+            if cached_name == name and cached_phone == phone:
+                logger.info(f"Найден дубль заявки на звонок: {name} {phone} (создана {current_time - timestamp:.1f} сек назад)")
+                return True
+        
+        # Добавляем в кэш
+        self.recent_calls.append((name, phone, current_time))
+        return False
+
     async def check_new_call_requests(self):
         """Проверить новые заявки на звонок"""
         try:
@@ -161,9 +180,18 @@ class ModelixNotificationBot:
             
             for request in new_requests:
                 request_id = request[0]
+                name = str(request[1])
+                phone = str(request[2])
+                
                 logger.info(f"Обрабатываем новую заявку на звонок ID={request_id}")
-                message = self.format_call_request(request)
-                await self.send_notification(message)
+                
+                # Проверяем на дубль (создана вместе с заявкой на печать)
+                if self.is_duplicate_call(name, phone):
+                    logger.info(f"Пропускаем дубль заявки на звонок ID={request_id}")
+                else:
+                    message = self.format_call_request(request)
+                    await self.send_notification(message)
+                
                 self.last_call_request_id = request_id
                 self.save_state()  # Сохраняем состояние после каждой заявки
                 logger.info(f"Обновлен last_call_request_id до {self.last_call_request_id}")

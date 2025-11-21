@@ -166,9 +166,12 @@ class ModelixNotificationBot:
             new_requests = cursor.fetchall()
             
             for request in new_requests:
+                request_id = request[0]
+                logger.info(f"Обрабатываем новую заявку на звонок ID={request_id}")
                 message = self.format_call_request(request)
                 await self.send_notification(message)
-                self.last_call_request_id = request[0]
+                self.last_call_request_id = request_id
+                logger.info(f"Обновлен last_call_request_id до {self.last_call_request_id}")
             
             conn.close()
             
@@ -198,9 +201,12 @@ class ModelixNotificationBot:
             new_orders = cursor.fetchall()
             
             for order in new_orders:
+                order_id = order[0]
+                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}")
                 message = self.format_print_order(order)
                 await self.send_notification(message)
-                self.last_print_order_id = order[0]
+                self.last_print_order_id = order_id
+                logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
             
             conn.close()
             
@@ -230,9 +236,10 @@ class ModelixNotificationBot:
             
             logger.info(f"Инициализация: последняя заявка на звонок ID={self.last_call_request_id}, "
                        f"последняя заявка на печать ID={self.last_print_order_id}")
+            logger.info("Бот будет отслеживать только НОВЫЕ заявки после запуска")
             
             # Отправить уведомление о запуске
-            await self.send_notification("🤖 <b>Бот уведомлений Modelix запущен</b>\n\n"
+            await self.send_notification("<b>Бот уведомлений Modelix запущен</b>\n\n"
                                         "Отслеживание новых заявок активировано.")
             
         except Exception as e:

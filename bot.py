@@ -215,17 +215,18 @@ class ModelixNotificationBot:
     def load_state(self):
         """Загрузить состояние из файла"""
         try:
+            logger.info(f"Проверяем файл состояния: {self.state_file}")
             if os.path.exists(self.state_file):
                 with open(self.state_file, 'r') as f:
                     state = json.load(f)
                     self.last_call_request_id = state.get('last_call_request_id', 0)
                     self.last_print_order_id = state.get('last_print_order_id', 0)
-                    logger.info(f"Состояние загружено: звонки ID={self.last_call_request_id}, печать ID={self.last_print_order_id}")
+                    logger.info(f"Состояние загружено из {self.state_file}: звонки ID={self.last_call_request_id}, печать ID={self.last_print_order_id}")
             else:
-                logger.info("Файл состояния не найден, начинаем с текущих максимальных ID")
+                logger.info(f"Файл состояния не найден по пути {self.state_file}, начинаем с текущих максимальных ID")
                 self.initialize_from_db()
         except Exception as e:
-            logger.error(f"Ошибка загрузки состояния: {e}")
+            logger.error(f"Ошибка загрузки состояния из {self.state_file}: {e}")
             self.initialize_from_db()
     
     def save_state(self):
@@ -237,8 +238,9 @@ class ModelixNotificationBot:
             }
             with open(self.state_file, 'w') as f:
                 json.dump(state, f)
+            logger.info(f"Состояние сохранено в {self.state_file}: звонки={self.last_call_request_id}, печать={self.last_print_order_id}")
         except Exception as e:
-            logger.error(f"Ошибка сохранения состояния: {e}")
+            logger.error(f"Ошибка сохранения состояния в {self.state_file}: {e}")
     
     def initialize_from_db(self):
         """Инициализация из БД (только при первом запуске)"""

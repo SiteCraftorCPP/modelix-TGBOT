@@ -225,7 +225,16 @@ class ModelixNotificationBot:
             
             for order in new_orders:
                 order_id = order[0]
+                name = str(order[1])
+                phone = str(order[2])
+                
                 logger.info(f"Обрабатываем новую заявку на печать ID={order_id}")
+                
+                # Добавляем в кэш чтобы избежать дублей звонков
+                current_time = time.time()
+                self.recent_calls.append((name, phone, current_time))
+                logger.info(f"Добавлен в кэш: {name} {phone}")
+                
                 message = self.format_print_order(order)
                 await self.send_notification(message)
                 self.last_print_order_id = order_id
@@ -321,8 +330,9 @@ class ModelixNotificationBot:
         
         while True:
             try:
-                await self.check_new_call_requests()
+                # Сначала проверяем печать, потом звонки (чтобы избежать дублей)
                 await self.check_new_print_orders()
+                await self.check_new_call_requests()
                 await asyncio.sleep(interval)
             except KeyboardInterrupt:
                 logger.info("Остановка бота...")

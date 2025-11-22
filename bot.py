@@ -39,16 +39,28 @@ class ModelixNotificationBot:
         """Получить соединение с БД Django"""
         return sqlite3.connect(self.db_path)
     
-    async def send_notification(self, message: str):
-        """Отправить уведомление в канал"""
+    async def send_notification(self, message: str, file_path=None):
+        """Отправить уведомление в канал, с опциональным файлом"""
         try:
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text=message,
-                parse_mode='HTML',
-                disable_web_page_preview=True
-            )
-            logger.info(f"Уведомление отправлено в канал {self.channel_id}")
+            if file_path and os.path.exists(file_path):
+                # Отправляем файл с подписью
+                with open(file_path, 'rb') as file:
+                    await self.bot.send_document(
+                        chat_id=self.channel_id,
+                        document=file,
+                        caption=message,
+                        parse_mode='HTML'
+                    )
+                logger.info(f"Уведомление с файлом отправлено в канал {self.channel_id}")
+            else:
+                # Отправляем только текст
+                await self.bot.send_message(
+                    chat_id=self.channel_id,
+                    text=message,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+                logger.info(f"Уведомление отправлено в канал {self.channel_id}")
         except TelegramError as e:
             logger.error(f"Ошибка отправки уведомления: {e}")
     
@@ -114,10 +126,6 @@ class ModelixNotificationBot:
         
         service_name = service_types.get(service_type, service_type)
         
-        file_info = ""
-        if file_path:
-            file_info = f"\n📎 <b>Файл:</b> Прикреплен"
-        
         # Обработка пустого сообщения
         if not message_text or str(message_text).strip() == '':
             message_text = "Не указано"
@@ -139,7 +147,7 @@ class ModelixNotificationBot:
 📱 <b>Телефон:</b> <code>{phone}</code>
 📧 <b>Email:</b> {email}
 🛠️ <b>Услуга:</b> {service_name}
-💬 <b>Сообщение:</b> {message_preview}{ellipsis}{file_info}
+💬 <b>Сообщение:</b> {message_preview}{ellipsis}
 """
         return message.strip()
     
@@ -227,6 +235,7 @@ class ModelixNotificationBot:
                 order_id = order[0]
                 name = str(order[1])
                 phone = str(order[2])
+                file_path = order[6]  # Путь к файлу из БД
                 
                 logger.info(f"Обрабатываем новую заявку на печать ID={order_id}")
                 
@@ -236,7 +245,25 @@ class ModelixNotificationBot:
                 logger.info(f"Добавлен в кэш: {name} {phone}")
                 
                 message = self.format_print_order(order)
-                await self.send_notification(message)
+                
+                # Определяем полный путь к файлу
+                full_file_path = None
+                if file_path:
+                    # Путь может быть относительным от Django проекта
+                    django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
+                    full_file_path = os.path.join(django_project_path, file_path)
+                    
+                    # Если файл не найден, пробуем как абсолютный путь
+                    if not os.path.exists(full_file_path):
+                        full_file_path = file_path
+                    
+                    if os.path.exists(full_file_path):
+                        logger.info(f"Найден файл для отправки: {full_file_path}")
+                    else:
+                        logger.warning(f"Файл не найден: {full_file_path}")
+                        full_file_path = None
+                
+                await self.send_notification(message, file_path=full_file_path)
                 self.last_print_order_id = order_id
                 self.save_state()  # Сохраняем состояние после каждой заявки
                 logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")

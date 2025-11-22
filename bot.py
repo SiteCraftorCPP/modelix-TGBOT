@@ -311,14 +311,13 @@ class ModelixNotificationBot:
             for order in new_orders:
                 logger.info(f"  Заявка ID={order[0]}, имя={order[1]}, телефон={order[2]}, email={order[3]}, время={order[7]}")
             
-            # Группируем заявки по ключу (name, phone, email, service_type) и времени (в пределах 3 минут)
+            # Группируем заявки по name+phone+email в пределах 5 минут (независимо от service_type)
             groups = {}
             for order in new_orders:
                 order_id = order[0]
-                name = str(order[1])
-                phone = str(order[2])
-                email = str(order[3])
-                service_type = str(order[4])
+                name = str(order[1]).strip()
+                phone = str(order[2]).strip()
+                email = str(order[3]).strip()
                 created_at = order[7]
                 
                 # Парсим время создания
@@ -330,15 +329,15 @@ class ModelixNotificationBot:
                     except ValueError:
                         dt = datetime.now()
                 
-                # Ключ для группировки - только по данным, без времени
-                data_key = (name, phone, email, service_type)
+                # Ключ для группировки - только name, phone, email (БЕЗ service_type!)
+                data_key = (name, phone, email)
                 
                 # Ищем существующую группу с такими же данными
                 found_group = None
                 for existing_key, existing_orders in groups.items():
-                    existing_data_key = existing_key[:4]  # Первые 4 элемента - данные
+                    existing_data_key = existing_key[:3]  # Первые 3 элемента - данные
                     if existing_data_key == data_key:
-                        # Проверяем время - если в пределах 3 минут от первой заявки в группе
+                        # Проверяем время - если в пределах 5 минут от первой заявки в группе
                         first_order_time = existing_orders[0][7]
                         try:
                             first_dt = datetime.strptime(first_order_time, '%Y-%m-%d %H:%M:%S.%f')
@@ -349,12 +348,12 @@ class ModelixNotificationBot:
                                 first_dt = datetime.now()
                         
                         time_diff = abs((dt - first_dt).total_seconds())
-                        if time_diff <= 180:  # 3 минуты
+                        if time_diff <= 300:  # 5 минут
                             found_group = existing_key
                             break
                 
                 if found_group:
-                    logger.info(f"  Заявка ID={order_id} добавлена в существующую группу {found_group[:4]}")
+                    logger.info(f"  Заявка ID={order_id} добавлена в существующую группу {found_group[:3]}")
                     groups[found_group].append(order)
                 else:
                     # Создаём новую группу
@@ -364,12 +363,12 @@ class ModelixNotificationBot:
             
             logger.info(f"Итого групп: {len(groups)}")
             for group_key, orders in groups.items():
-                logger.info(f"  Группа {group_key[:4]}: {len(orders)} заявок, ID: {[o[0] for o in orders]}")
+                logger.info(f"  Группа {group_key[:3]}: {len(orders)} заявок, ID: {[o[0] for o in orders]}")
             
             # Обрабатываем каждую группу
             max_processed_id = self.last_print_order_id
             for group_key, orders in groups.items():
-                name, phone, email, service_type, dt = group_key
+                name, phone, email, dt = group_key
                 first_order = orders[0]
                 max_order_id = max(order[0] for order in orders)
                 

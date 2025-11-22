@@ -367,6 +367,9 @@ class ModelixNotificationBot:
             
             # Обрабатываем каждую группу
             max_processed_id = self.last_print_order_id
+            now = datetime.now()
+            recent_orders = []  # Заявки созданные недавно (менее 30 сек назад)
+            
             for group_key, orders in groups.items():
                 name, phone, email, dt = group_key
                 first_order = orders[0]
@@ -374,6 +377,27 @@ class ModelixNotificationBot:
                 
                 order_ids = [order[0] for order in orders]
                 logger.info(f"Обрабатываем группу заявок: {len(orders)} заявок, ID: {order_ids}")
+                
+                # Проверяем время создания самой свежей заявки в группе
+                latest_order_time = None
+                for o in orders:
+                    try:
+                        order_time = datetime.strptime(str(o[7]), '%Y-%m-%d %H:%M:%S.%f')
+                    except ValueError:
+                        try:
+                            order_time = datetime.strptime(str(o[7]), '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            order_time = now
+                    if latest_order_time is None or order_time > latest_order_time:
+                        latest_order_time = order_time
+                
+                time_since_creation = (now - latest_order_time).total_seconds()
+                
+                # Если заявка создана менее 30 секунд назад - откладываем обработку
+                if time_since_creation < 30:
+                    logger.info(f"Заявка ID={max_order_id} создана {time_since_creation:.1f} сек назад - откладываем обработку")
+                    recent_orders.append(max_order_id)
+                    continue
                 
                 # Добавляем в кэш чтобы избежать дублей звонков
                 current_time = time.time()
@@ -406,10 +430,13 @@ class ModelixNotificationBot:
                 if max_order_id > max_processed_id:
                     max_processed_id = max_order_id
             
-            # Обновляем last_print_order_id до максимального ID из всех обработанных заявок
-            self.last_print_order_id = max_processed_id
-            self.save_state()
-            logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
+            # Обновляем last_print_order_id только для обработанных заявок (не отложенных)
+            if recent_orders:
+                logger.info(f"Отложено {len(recent_orders)} заявок для следующей проверки: {recent_orders}")
+            else:
+                self.last_print_order_id = max_processed_id
+                self.save_state()
+                logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
             
             conn.close()
             

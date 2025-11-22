@@ -133,7 +133,7 @@ class ModelixNotificationBot:
         ellipsis = '...' if len(message_text) > 200 else ''
         
         message = f"""
-<b>{status} - ПЕЧАТЬ</b>
+<b>🔔 Заявка c данными</b>
 
 👤 <b>Имя:</b> {name}
 📱 <b>Телефон:</b> <code>{phone}</code>

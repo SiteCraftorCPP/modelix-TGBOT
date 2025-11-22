@@ -76,13 +76,13 @@ class ModelixNotificationBot:
                     logger.info(f"Уведомление отправлено в канал {self.channel_id}")
             else:
                 # Отправляем только текст
-            await self.bot.send_message(
-                chat_id=self.channel_id,
-                text=message,
-                parse_mode='HTML',
-                disable_web_page_preview=True
-            )
-            logger.info(f"Уведомление отправлено в канал {self.channel_id}")
+                await self.bot.send_message(
+                    chat_id=self.channel_id,
+                    text=message,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+                logger.info(f"Уведомление отправлено в канал {self.channel_id}")
         except TelegramError as e:
             logger.error(f"Ошибка отправки уведомления: {e}")
         except Exception as e:

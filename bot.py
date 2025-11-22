@@ -367,6 +367,7 @@ class ModelixNotificationBot:
                 logger.info(f"  Группа {group_key[:4]}: {len(orders)} заявок, ID: {[o[0] for o in orders]}")
             
             # Обрабатываем каждую группу
+            max_processed_id = self.last_print_order_id
             for group_key, orders in groups.items():
                 name, phone, email, service_type, dt = group_key
                 first_order = orders[0]
@@ -402,10 +403,14 @@ class ModelixNotificationBot:
                 
                 await self.send_notification(message, file_paths=file_paths)
                 
-                # Обновляем last_print_order_id до максимального ID в группе
-                self.last_print_order_id = max_order_id
-                self.save_state()
-                logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
+                # Запоминаем максимальный ID
+                if max_order_id > max_processed_id:
+                    max_processed_id = max_order_id
+            
+            # Обновляем last_print_order_id до максимального ID из всех обработанных заявок
+            self.last_print_order_id = max_processed_id
+            self.save_state()
+            logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
             
             conn.close()
             

@@ -59,13 +59,25 @@ class ModelixNotificationBot:
             if existing_files:
                 # Отправляем несколько фото одним сообщением
                 try:
-                    media_group = []
-                    file_handles = []
-                    try:
+                    if len(existing_files) == 1:
+                        # Для одного файла используем send_photo
+                        with open(existing_files[0], 'rb') as photo:
+                            await self.bot.send_photo(
+                                chat_id=self.channel_id,
+                                photo=photo,
+                                caption=message,
+                                parse_mode='HTML'
+                            )
+                        logger.info(f"Уведомление с 1 фото отправлено в канал {self.channel_id}")
+                    else:
+                        # Для нескольких файлов используем send_media_group
+                        # Читаем файлы в bytes и передаём через InputFile
+                        media_group = []
                         for i, file_path in enumerate(existing_files):
-                            file_handle = open(file_path, 'rb')
-                            file_handles.append(file_handle)
-                            input_file = InputFile(file_handle, filename=os.path.basename(file_path))
+                            with open(file_path, 'rb') as f:
+                                file_data = f.read()
+                            # Создаём InputFile из bytes
+                            input_file = InputFile(file_data, filename=os.path.basename(file_path))
                             media = InputMediaPhoto(
                                 media=input_file,
                                 caption=message if i == 0 else None,
@@ -79,13 +91,6 @@ class ModelixNotificationBot:
                             media=media_group
                         )
                         logger.info(f"Уведомление с {len(existing_files)} фото отправлено в канал {self.channel_id}")
-                    finally:
-                        # Закрываем все файлы
-                        for file_handle in file_handles:
-                            try:
-                                file_handle.close()
-                            except:
-                                pass
                 except Exception as file_error:
                     logger.error(f"Ошибка отправки файлов: {file_error}")
                     # Отправляем только текст если файлы не отправились

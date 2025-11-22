@@ -42,16 +42,38 @@ class ModelixNotificationBot:
     async def send_notification(self, message: str, file_path=None):
         """Отправить уведомление в канал, с опциональным файлом"""
         try:
-            if file_path and os.path.exists(file_path):
-                # Отправляем файл с подписью
-                with open(file_path, 'rb') as file:
-                    await self.bot.send_document(
+            if file_path:
+                if os.path.exists(file_path):
+                    # Отправляем файл с подписью
+                    try:
+                        with open(file_path, 'rb') as file:
+                            await self.bot.send_document(
+                                chat_id=self.channel_id,
+                                document=file,
+                                caption=message,
+                                parse_mode='HTML'
+                            )
+                        logger.info(f"Уведомление с файлом отправлено в канал {self.channel_id}: {file_path}")
+                    except Exception as file_error:
+                        logger.error(f"Ошибка отправки файла {file_path}: {file_error}")
+                        # Отправляем только текст если файл не отправился
+                        await self.bot.send_message(
+                            chat_id=self.channel_id,
+                            text=message,
+                            parse_mode='HTML',
+                            disable_web_page_preview=True
+                        )
+                        logger.info(f"Уведомление отправлено без файла в канал {self.channel_id}")
+                else:
+                    logger.warning(f"Файл не найден: {file_path}, отправляем только текст")
+                    # Отправляем только текст если файл не найден
+                    await self.bot.send_message(
                         chat_id=self.channel_id,
-                        document=file,
-                        caption=message,
-                        parse_mode='HTML'
+                        text=message,
+                        parse_mode='HTML',
+                        disable_web_page_preview=True
                     )
-                logger.info(f"Уведомление с файлом отправлено в канал {self.channel_id}")
+                    logger.info(f"Уведомление отправлено в канал {self.channel_id}")
             else:
                 # Отправляем только текст
                 await self.bot.send_message(
@@ -63,6 +85,8 @@ class ModelixNotificationBot:
                 logger.info(f"Уведомление отправлено в канал {self.channel_id}")
         except TelegramError as e:
             logger.error(f"Ошибка отправки уведомления: {e}")
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка отправки уведомления: {e}")
     
     def format_call_request(self, request_data):
         """Форматировать сообщение о заявке на звонок"""
@@ -237,7 +261,7 @@ class ModelixNotificationBot:
                 phone = str(order[2])
                 file_path = order[6]  # Путь к файлу из БД
                 
-                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}")
+                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}, file_path из БД: {file_path}")
                 
                 # Добавляем в кэш чтобы избежать дублей звонков
                 current_time = time.time()
@@ -248,20 +272,23 @@ class ModelixNotificationBot:
                 
                 # Определяем полный путь к файлу
                 full_file_path = None
-                if file_path:
+                if file_path and str(file_path).strip():
+                    file_path_str = str(file_path).strip()
                     # Путь может быть относительным от Django проекта
                     django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
-                    full_file_path = os.path.join(django_project_path, file_path)
+                    full_file_path = os.path.join(django_project_path, file_path_str)
                     
                     # Если файл не найден, пробуем как абсолютный путь
                     if not os.path.exists(full_file_path):
-                        full_file_path = file_path
+                        full_file_path = file_path_str
                     
                     if os.path.exists(full_file_path):
                         logger.info(f"Найден файл для отправки: {full_file_path}")
                     else:
-                        logger.warning(f"Файл не найден: {full_file_path}")
+                        logger.warning(f"Файл не найден: {full_file_path}, отправляем только текст")
                         full_file_path = None
+                else:
+                    logger.info(f"Файл не указан в заявке, отправляем только текст")
                 
                 await self.send_notification(message, file_path=full_file_path)
                 self.last_print_order_id = order_id

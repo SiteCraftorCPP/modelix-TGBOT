@@ -7,7 +7,7 @@ import json
 import os
 import time
 from datetime import datetime
-from telegram import Bot
+from telegram import Bot, InputMediaPhoto
 from telegram.error import TelegramError
 import logging
 
@@ -39,41 +39,46 @@ class ModelixNotificationBot:
         """Получить соединение с БД Django"""
         return sqlite3.connect(self.db_path)
     
-    async def send_notification(self, message: str, file_path=None):
-        """Отправить уведомление в канал, с опциональным файлом"""
+    async def send_notification(self, message: str, file_paths=None):
+        """Отправить уведомление в канал, с опциональными файлами (до 10)"""
         try:
-            if file_path:
-                if os.path.exists(file_path):
-                    # Отправляем файл с подписью
-                    try:
-                        with open(file_path, 'rb') as file:
-                            await self.bot.send_document(
-                                chat_id=self.channel_id,
-                                document=file,
-                                caption=message,
-                                parse_mode='HTML'
-                            )
-                        logger.info(f"Уведомление с файлом отправлено в канал {self.channel_id}: {file_path}")
-                    except Exception as file_error:
-                        logger.error(f"Ошибка отправки файла {file_path}: {file_error}")
-                        # Отправляем только текст если файл не отправился
-                        await self.bot.send_message(
-                            chat_id=self.channel_id,
-                            text=message,
-                            parse_mode='HTML',
-                            disable_web_page_preview=True
+            # Фильтруем существующие файлы
+            existing_files = []
+            if file_paths:
+                for file_path in file_paths[:10]:  # Максимум 10 файлов
+                    if file_path and os.path.exists(file_path):
+                        existing_files.append(file_path)
+                    elif file_path:
+                        logger.warning(f"Файл не найден: {file_path}")
+            
+            if existing_files:
+                # Отправляем несколько фото одним сообщением
+                try:
+                    media_group = []
+                    for i, file_path in enumerate(existing_files):
+                        # Передаём путь к файлу, telegram-bot сам откроет
+                        media = InputMediaPhoto(
+                            media=file_path,
+                            caption=message if i == 0 else None,  # Подпись только к первому фото
+                            parse_mode='HTML'
                         )
-                        logger.info(f"Уведомление отправлено без файла в канал {self.channel_id}")
-                else:
-                    logger.warning(f"Файл не найден: {file_path}, отправляем только текст")
-                    # Отправляем только текст если файл не найден
+                        media_group.append(media)
+                    
+                    await self.bot.send_media_group(
+                        chat_id=self.channel_id,
+                        media=media_group
+                    )
+                    logger.info(f"Уведомление с {len(existing_files)} фото отправлено в канал {self.channel_id}")
+                except Exception as file_error:
+                    logger.error(f"Ошибка отправки файлов: {file_error}")
+                    # Отправляем только текст если файлы не отправились
                     await self.bot.send_message(
                         chat_id=self.channel_id,
                         text=message,
                         parse_mode='HTML',
                         disable_web_page_preview=True
                     )
-                    logger.info(f"Уведомление отправлено в канал {self.channel_id}")
+                    logger.info(f"Уведомление отправлено без файлов в канал {self.channel_id}")
             else:
                 # Отправляем только текст
                 await self.bot.send_message(
@@ -236,8 +241,29 @@ class ModelixNotificationBot:
         except Exception as e:
             logger.error(f"Ошибка при проверке заявок на звонок: {e}")
     
+    def find_file_path(self, file_path_str):
+        """Найти полный путь к файлу"""
+        if not file_path_str or not str(file_path_str).strip():
+            return None
+        
+        file_path_str = str(file_path_str).strip()
+        django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
+        
+        # Пробуем несколько вариантов путей
+        possible_paths = [
+            os.path.join(django_project_path, 'media', file_path_str),  # /var/www/modelix/media/orders/...
+            os.path.join(django_project_path, file_path_str),  # /var/www/modelix/orders/...
+            file_path_str  # Абсолютный путь
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+
     async def check_new_print_orders(self):
-        """Проверить новые заявки на печать"""
+        """Проверить новые заявки на печать и сгруппировать по одинаковым данным"""
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
@@ -255,55 +281,79 @@ class ModelixNotificationBot:
             
             new_orders = cursor.fetchall()
             
+            if not new_orders:
+                conn.close()
+                return
+            
+            # Группируем заявки по ключу (name, phone, email, service_type) и времени (в пределах 5 минут)
+            groups = {}
             for order in new_orders:
                 order_id = order[0]
                 name = str(order[1])
                 phone = str(order[2])
-                file_path = order[6]  # Путь к файлу из БД
+                email = str(order[3])
+                service_type = str(order[4])
+                created_at = order[7]
                 
-                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}, file_path из БД: {file_path}")
+                # Парсим время создания
+                try:
+                    dt = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S.%f')
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(created_at, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        dt = datetime.now()
+                
+                # Ключ для группировки
+                group_key = (name, phone, email, service_type, dt.strftime('%Y-%m-%d %H:%M'))
+                
+                if group_key not in groups:
+                    groups[group_key] = []
+                groups[group_key].append(order)
+            
+            # Обрабатываем каждую группу
+            for group_key, orders in groups.items():
+                name, phone, email, service_type, time_key = group_key
+                first_order = orders[0]
+                max_order_id = max(order[0] for order in orders)
+                
+                logger.info(f"Обрабатываем группу заявок: {len(orders)} заявок, ID от {first_order[0]} до {max_order_id}")
                 
                 # Добавляем в кэш чтобы избежать дублей звонков
                 current_time = time.time()
                 self.recent_calls.append((name, phone, current_time))
                 logger.info(f"Добавлен в кэш: {name} {phone}")
                 
-                message = self.format_print_order(order)
+                # Форматируем сообщение из первой заявки
+                message = self.format_print_order(first_order)
                 
-                # Определяем полный путь к файлу
-                full_file_path = None
-                if file_path and str(file_path).strip():
-                    file_path_str = str(file_path).strip()
-                    # Путь может быть относительным от Django проекта
-                    django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
-                    
-                    # Пробуем несколько вариантов путей
-                    possible_paths = [
-                        os.path.join(django_project_path, 'media', file_path_str),  # /var/www/modelix/media/orders/...
-                        os.path.join(django_project_path, file_path_str),  # /var/www/modelix/orders/...
-                        file_path_str  # Абсолютный путь
-                    ]
-                    
-                    for path in possible_paths:
-                        if os.path.exists(path):
-                            full_file_path = path
-                            logger.info(f"Найден файл для отправки: {full_file_path}")
-                            break
-                    
-                    if not full_file_path:
-                        logger.warning(f"Файл не найден ни по одному из путей: {possible_paths}, отправляем только текст")
+                # Собираем все файлы из группы
+                file_paths = []
+                for order in orders:
+                    file_path = order[6]  # Путь к файлу из БД
+                    if file_path:
+                        full_path = self.find_file_path(file_path)
+                        if full_path:
+                            file_paths.append(full_path)
+                            logger.info(f"Добавлен файл: {full_path}")
+                        else:
+                            logger.warning(f"Файл не найден: {file_path}")
+                
+                if file_paths:
+                    logger.info(f"Отправляем уведомление с {len(file_paths)} фото")
                 else:
-                    logger.info(f"Файл не указан в заявке, отправляем только текст")
+                    logger.info(f"Отправляем уведомление без файлов")
                 
-                await self.send_notification(message, file_path=full_file_path)
-                self.last_print_order_id = order_id
-                self.save_state()  # Сохраняем состояние после каждой заявки
+                await self.send_notification(message, file_paths=file_paths)
+                
+                # Обновляем last_print_order_id до максимального ID в группе
+                self.last_print_order_id = max_order_id
+                self.save_state()
                 logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")
             
             conn.close()
             
-            if new_orders:
-                logger.info(f"Обработано {len(new_orders)} новых заявок на печать")
+            logger.info(f"Обработано {len(new_orders)} новых заявок на печать в {len(groups)} группах")
                 
         except Exception as e:
             logger.error(f"Ошибка при проверке заявок на печать: {e}")

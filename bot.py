@@ -109,7 +109,7 @@ class ModelixNotificationBot:
     
     def format_print_order(self, order_data):
         """Форматировать сообщение о заявке на печать"""
-        order_id, name, phone, email, service_type, message_text, file_path, created_at, is_processed = order_data
+        order_id, name, phone, email, service_type, message_text, created_at, is_processed = order_data
         
         status = "✅ Обработано" if is_processed else "🔔 Новая заявка"
         
@@ -234,7 +234,7 @@ class ModelixNotificationBot:
             # Получаем новые заявки
             cursor.execute(
                 """
-                SELECT id, name, phone, email, service_type, message, file, created_at, is_processed
+                SELECT id, name, phone, email, service_type, message, created_at, is_processed
                 FROM main_printorder
                 WHERE id > ?
                 ORDER BY id ASC
@@ -248,9 +248,8 @@ class ModelixNotificationBot:
                 order_id = order[0]
                 name = str(order[1])
                 phone = str(order[2])
-                file_path = order[6]  # Путь к файлу из БД
                 
-                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}, file_path из БД: {file_path}")
+                logger.info(f"Обрабатываем новую заявку на печать ID={order_id}")
                 
                 # Добавляем в кэш чтобы избежать дублей звонков
                 current_time = time.time()
@@ -259,32 +258,60 @@ class ModelixNotificationBot:
                 
                 message = self.format_print_order(order)
                 
-                # Определяем полный путь к файлу
-                full_file_path = None
-                if file_path and str(file_path).strip():
-                    file_path_str = str(file_path).strip()
-                    # Путь может быть относительным от Django проекта
-                    django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
-                    
-                    # Пробуем несколько вариантов путей
-                    possible_paths = [
-                        os.path.join(django_project_path, 'media', file_path_str),  # /var/www/modelix/media/orders/...
-                        os.path.join(django_project_path, file_path_str),  # /var/www/modelix/orders/...
-                        file_path_str  # Абсолютный путь
-                    ]
-                    
-                    for path in possible_paths:
-                        if os.path.exists(path):
-                            full_file_path = path
-                            logger.info(f"Найден файл для отправки: {full_file_path}")
-                            break
-                    
-                    if not full_file_path:
-                        logger.warning(f"Файл не найден ни по одному из путей: {possible_paths}, отправляем только текст")
-                else:
-                    logger.info(f"Файл не указан в заявке, отправляем только текст")
+                # Получаем ВСЕ файлы из связанной таблицы
+                cursor.execute(
+                    """
+                    SELECT file FROM main_printorderfile
+                    WHERE print_order_id = ?
+                    """,
+                    (order_id,)
+                )
+                file_records = cursor.fetchall()
                 
-                await self.send_notification(message, file_path=full_file_path)
+                # Отправляем уведомление с текстом
+                await self.send_notification(message, file_path=None)
+                
+                # Отправляем каждый файл отдельным сообщением
+                django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
+                files_sent = 0
+                
+                for file_record in file_records:
+                    file_path_str = str(file_record[0]).strip() if file_record[0] else None
+                    
+                    if file_path_str:
+                        # Пробуем несколько вариантов путей
+                        possible_paths = [
+                            os.path.join(django_project_path, 'media', file_path_str),
+                            os.path.join(django_project_path, file_path_str),
+                            file_path_str
+                        ]
+                        
+                        full_file_path = None
+                        for path in possible_paths:
+                            if os.path.exists(path):
+                                full_file_path = path
+                                break
+                        
+                        if full_file_path:
+                            try:
+                                with open(full_file_path, 'rb') as file:
+                                    await self.bot.send_document(
+                                        chat_id=self.channel_id,
+                                        document=file,
+                                        parse_mode='HTML'
+                                    )
+                                logger.info(f"Файл отправлен: {full_file_path}")
+                                files_sent += 1
+                            except Exception as file_error:
+                                logger.error(f"Ошибка отправки файла {full_file_path}: {file_error}")
+                        else:
+                            logger.warning(f"Файл не найден: {file_path_str}")
+                
+                if files_sent > 0:
+                    logger.info(f"Отправлено файлов: {files_sent} из {len(file_records)}")
+                else:
+                    logger.info(f"Файлы не найдены или не отправлены")
+                
                 self.last_print_order_id = order_id
                 self.save_state()  # Сохраняем состояние после каждой заявки
                 logger.info(f"Обновлен last_print_order_id до {self.last_print_order_id}")

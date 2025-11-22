@@ -262,23 +262,71 @@ class ModelixNotificationBot:
                 # Отправляем уведомление с текстом
                 await self.send_notification(message, file_path=None)
                 
-                # Если есть файл - отправляем его отдельным сообщением
-                if file_path and str(file_path).strip():
-                    file_path_str = str(file_path).strip()
-                    django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
+                # Получаем ВСЕ файлы для этой заявки из разных возможных таблиц
+                all_files = []
+                
+                # Пробуем разные варианты названий таблиц
+                possible_table_names = [
+                    'main_printorderfile',
+                    'main_printorder_file', 
+                    'main_orderfile',
+                    'main_file',
+                    'main_printorderfiles'
+                ]
+                
+                for table_name in possible_table_names:
+                    try:
+                        # Пробуем разные варианты названий полей
+                        possible_queries = [
+                            f"SELECT file FROM {table_name} WHERE print_order_id = ?",
+                            f"SELECT file FROM {table_name} WHERE order_id = ?",
+                            f"SELECT file_path FROM {table_name} WHERE print_order_id = ?",
+                            f"SELECT file_path FROM {table_name} WHERE order_id = ?",
+                            f"SELECT file FROM {table_name} WHERE printorder_id = ?",
+                        ]
+                        
+                        for query in possible_queries:
+                            try:
+                                cursor.execute(query, (order_id,))
+                                file_records = cursor.fetchall()
+                                if file_records:
+                                    logger.info(f"Найдена таблица {table_name} с запросом {query}, файлов: {len(file_records)}")
+                                    for file_record in file_records:
+                                        if file_record[0]:
+                                            all_files.append(str(file_record[0]).strip())
+                                    break
+                            except:
+                                continue
+                        
+                        if all_files:
+                            break
+                    except:
+                        continue
+                
+                # Если не нашли в связанных таблицах, пробуем поле file из main_printorder
+                if not all_files and file_path and str(file_path).strip():
+                    all_files.append(str(file_path).strip())
+                    logger.info(f"Используем файл из поля file: {file_path}")
+                
+                # Отправляем ВСЕ файлы отдельными сообщениями
+                django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
+                files_sent = 0
+                
+                for file_path_str in all_files:
+                    if not file_path_str:
+                        continue
                     
                     # Пробуем несколько вариантов путей
                     possible_paths = [
-                        os.path.join(django_project_path, 'media', file_path_str),  # /var/www/modelix/media/orders/...
-                        os.path.join(django_project_path, file_path_str),  # /var/www/modelix/orders/...
-                        file_path_str  # Абсолютный путь
+                        os.path.join(django_project_path, 'media', file_path_str),
+                        os.path.join(django_project_path, file_path_str),
+                        file_path_str
                     ]
                     
                     full_file_path = None
                     for path in possible_paths:
                         if os.path.exists(path):
                             full_file_path = path
-                            logger.info(f"Найден файл для отправки: {full_file_path}")
                             break
                     
                     if full_file_path:
@@ -290,10 +338,16 @@ class ModelixNotificationBot:
                                     parse_mode='HTML'
                                 )
                             logger.info(f"Файл отправлен: {full_file_path}")
+                            files_sent += 1
                         except Exception as file_error:
                             logger.error(f"Ошибка отправки файла {full_file_path}: {file_error}")
                     else:
                         logger.warning(f"Файл не найден: {file_path_str}")
+                
+                if files_sent > 0:
+                    logger.info(f"Отправлено файлов: {files_sent} из {len(all_files)}")
+                elif all_files:
+                    logger.warning(f"Файлы найдены в БД но не отправлены: {all_files}")
                 
                 self.last_print_order_id = order_id
                 self.save_state()  # Сохраняем состояние после каждой заявки

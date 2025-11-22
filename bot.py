@@ -307,7 +307,7 @@ class ModelixNotificationBot:
                 conn.close()
                 return
             
-            # Группируем заявки по ключу (name, phone, email, service_type) и времени (в пределах 5 минут)
+            # Группируем заявки по ключу (name, phone, email, service_type) и времени (в пределах 3 минут)
             groups = {}
             for order in new_orders:
                 order_id = order[0]
@@ -326,20 +326,44 @@ class ModelixNotificationBot:
                     except ValueError:
                         dt = datetime.now()
                 
-                # Ключ для группировки
-                group_key = (name, phone, email, service_type, dt.strftime('%Y-%m-%d %H:%M'))
+                # Ключ для группировки - только по данным, без времени
+                data_key = (name, phone, email, service_type)
                 
-                if group_key not in groups:
-                    groups[group_key] = []
-                groups[group_key].append(order)
+                # Ищем существующую группу с такими же данными
+                found_group = None
+                for existing_key, existing_orders in groups.items():
+                    existing_data_key = existing_key[:4]  # Первые 4 элемента - данные
+                    if existing_data_key == data_key:
+                        # Проверяем время - если в пределах 3 минут от первой заявки в группе
+                        first_order_time = existing_orders[0][7]
+                        try:
+                            first_dt = datetime.strptime(first_order_time, '%Y-%m-%d %H:%M:%S.%f')
+                        except ValueError:
+                            try:
+                                first_dt = datetime.strptime(first_order_time, '%Y-%m-%d %H:%M:%S')
+                            except ValueError:
+                                first_dt = datetime.now()
+                        
+                        time_diff = abs((dt - first_dt).total_seconds())
+                        if time_diff <= 180:  # 3 минуты
+                            found_group = existing_key
+                            break
+                
+                if found_group:
+                    groups[found_group].append(order)
+                else:
+                    # Создаём новую группу
+                    group_key = data_key + (dt,)
+                    groups[group_key] = [order]
             
             # Обрабатываем каждую группу
             for group_key, orders in groups.items():
-                name, phone, email, service_type, time_key = group_key
+                name, phone, email, service_type, dt = group_key
                 first_order = orders[0]
                 max_order_id = max(order[0] for order in orders)
                 
-                logger.info(f"Обрабатываем группу заявок: {len(orders)} заявок, ID от {first_order[0]} до {max_order_id}")
+                order_ids = [order[0] for order in orders]
+                logger.info(f"Обрабатываем группу заявок: {len(orders)} заявок, ID: {order_ids}")
                 
                 # Добавляем в кэш чтобы избежать дублей звонков
                 current_time = time.time()

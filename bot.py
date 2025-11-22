@@ -42,33 +42,51 @@ class ModelixNotificationBot:
     async def send_notification(self, message: str, file_paths=None):
         """Отправить уведомление в канал, с опциональными файлами (до 10)"""
         try:
+            logger.info(f"send_notification вызван: file_paths={file_paths}")
             # Фильтруем существующие файлы
             existing_files = []
             if file_paths:
+                logger.info(f"Обрабатываем {len(file_paths)} файлов")
                 for file_path in file_paths[:10]:  # Максимум 10 файлов
                     if file_path and os.path.exists(file_path):
                         existing_files.append(file_path)
+                        logger.info(f"Файл найден: {file_path}")
                     elif file_path:
                         logger.warning(f"Файл не найден: {file_path}")
+            else:
+                logger.info("file_paths пустой или None")
             
             if existing_files:
                 # Отправляем несколько фото одним сообщением
                 try:
                     media_group = []
-                    for i, file_path in enumerate(existing_files):
-                        # Передаём путь к файлу, telegram-bot сам откроет
-                        media = InputMediaPhoto(
-                            media=file_path,
-                            caption=message if i == 0 else None,  # Подпись только к первому фото
-                            parse_mode='HTML'
+                    file_handles = []
+                    try:
+                        for i, file_path in enumerate(existing_files):
+                            # Открываем файл
+                            file_handle = open(file_path, 'rb')
+                            file_handles.append(file_handle)
+                            
+                            media = InputMediaPhoto(
+                                media=file_handle,
+                                caption=message if i == 0 else None,  # Подпись только к первому фото
+                                parse_mode='HTML'
+                            )
+                            media_group.append(media)
+                        
+                        logger.info(f"Создана media_group с {len(media_group)} фото, отправляем...")
+                        await self.bot.send_media_group(
+                            chat_id=self.channel_id,
+                            media=media_group
                         )
-                        media_group.append(media)
-                    
-                    await self.bot.send_media_group(
-                        chat_id=self.channel_id,
-                        media=media_group
-                    )
-                    logger.info(f"Уведомление с {len(existing_files)} фото отправлено в канал {self.channel_id}")
+                        logger.info(f"Уведомление с {len(existing_files)} фото отправлено в канал {self.channel_id}")
+                    finally:
+                        # Закрываем все файлы
+                        for file_handle in file_handles:
+                            try:
+                                file_handle.close()
+                            except:
+                                pass
                 except Exception as file_error:
                     logger.error(f"Ошибка отправки файлов: {file_error}")
                     # Отправляем только текст если файлы не отправились

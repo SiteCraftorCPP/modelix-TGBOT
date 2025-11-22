@@ -276,17 +276,22 @@ class ModelixNotificationBot:
                     file_path_str = str(file_path).strip()
                     # Путь может быть относительным от Django проекта
                     django_project_path = os.path.dirname(self.db_path)  # /var/www/modelix
-                    full_file_path = os.path.join(django_project_path, file_path_str)
                     
-                    # Если файл не найден, пробуем как абсолютный путь
-                    if not os.path.exists(full_file_path):
-                        full_file_path = file_path_str
+                    # Пробуем несколько вариантов путей
+                    possible_paths = [
+                        os.path.join(django_project_path, 'media', file_path_str),  # /var/www/modelix/media/orders/...
+                        os.path.join(django_project_path, file_path_str),  # /var/www/modelix/orders/...
+                        file_path_str  # Абсолютный путь
+                    ]
                     
-                    if os.path.exists(full_file_path):
-                        logger.info(f"Найден файл для отправки: {full_file_path}")
-                    else:
-                        logger.warning(f"Файл не найден: {full_file_path}, отправляем только текст")
-                        full_file_path = None
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            full_file_path = path
+                            logger.info(f"Найден файл для отправки: {full_file_path}")
+                            break
+                    
+                    if not full_file_path:
+                        logger.warning(f"Файл не найден ни по одному из путей: {possible_paths}, отправляем только текст")
                 else:
                     logger.info(f"Файл не указан в заявке, отправляем только текст")
                 

@@ -221,8 +221,8 @@ class ModelixNotificationBot:
                 if self.is_duplicate_call(name, phone):
                     logger.info(f"Пропускаем дубль заявки на звонок ID={request_id}")
                 else:
-                message = self.format_call_request(request)
-                await self.send_notification(message)
+                    message = self.format_call_request(request)
+                    await self.send_notification(message)
                 
                 self.last_call_request_id = request_id
                 self.save_state()  # Сохраняем состояние после каждой заявки

@@ -307,6 +307,10 @@ class ModelixNotificationBot:
                 conn.close()
                 return
             
+            logger.info(f"Найдено новых заявок на печать: {len(new_orders)}")
+            for order in new_orders:
+                logger.info(f"  Заявка ID={order[0]}, имя={order[1]}, телефон={order[2]}, email={order[3]}, время={order[7]}")
+            
             # Группируем заявки по ключу (name, phone, email, service_type) и времени (в пределах 3 минут)
             groups = {}
             for order in new_orders:
@@ -350,11 +354,17 @@ class ModelixNotificationBot:
                             break
                 
                 if found_group:
+                    logger.info(f"  Заявка ID={order_id} добавлена в существующую группу {found_group[:4]}")
                     groups[found_group].append(order)
                 else:
                     # Создаём новую группу
                     group_key = data_key + (dt,)
                     groups[group_key] = [order]
+                    logger.info(f"  Заявка ID={order_id} создала новую группу {data_key}")
+            
+            logger.info(f"Итого групп: {len(groups)}")
+            for group_key, orders in groups.items():
+                logger.info(f"  Группа {group_key[:4]}: {len(orders)} заявок, ID: {[o[0] for o in orders]}")
             
             # Обрабатываем каждую группу
             for group_key, orders in groups.items():

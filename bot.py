@@ -7,7 +7,7 @@ import json
 import os
 import time
 from datetime import datetime
-from telegram import Bot, InputMediaPhoto
+from telegram import Bot, InputMediaPhoto, InputFile
 from telegram.error import TelegramError
 import logging
 
@@ -63,13 +63,12 @@ class ModelixNotificationBot:
                     file_handles = []
                     try:
                         for i, file_path in enumerate(existing_files):
-                            # Открываем файл
                             file_handle = open(file_path, 'rb')
                             file_handles.append(file_handle)
-                            
+                            input_file = InputFile(file_handle, filename=os.path.basename(file_path))
                             media = InputMediaPhoto(
-                                media=file_handle,
-                                caption=message if i == 0 else None,  # Подпись только к первому фото
+                                media=input_file,
+                                caption=message if i == 0 else None,
                                 parse_mode='HTML'
                             )
                             media_group.append(media)

@@ -1,12 +1,24 @@
 """
 Django интеграция для отправки уведомлений через signals
-Этот файл нужно подключить в Django приложение для мгновенной отправки уведомлений
+Этот файл нужно подключить в Django приложение для мгновенной отправки уведомлений.
+
+Если используете прокси для Telegram: скопируйте рядом telegram_client.py
+(из корня этого репозитория) в приложение Django (например main/), чтобы импорт
+main.telegram_client или корневой telegram_client находился в PYTHONPATH.
 """
 import asyncio
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from telegram import Bot
 from telegram.error import TelegramError
+
+try:
+    from telegram_client import create_telegram_bot
+except ImportError:
+    try:
+        from main.telegram_client import create_telegram_bot
+    except ImportError:
+        create_telegram_bot = None  # type: ignore[misc,assignment]
 from datetime import datetime
 import logging
 
@@ -64,8 +76,11 @@ class TelegramNotifier:
                     "2. Django settings.py\n"
                     "3. Файл main/telegram_config.py"
                 )
-            
-            self._bot = Bot(token=BOT_TOKEN)
+
+            if create_telegram_bot is not None:
+                self._bot = create_telegram_bot(BOT_TOKEN)
+            else:
+                self._bot = Bot(token=BOT_TOKEN)
             self._channel_id = CHANNEL_ID
     
     async def send_message_async(self, message: str):

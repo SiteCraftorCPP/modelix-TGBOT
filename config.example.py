@@ -11,6 +11,10 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 # Формат: -100XXXXXXXXX для приватных каналов или @channel_name для публичных
 CHANNEL_ID = os.getenv('TELEGRAM_CHANNEL_ID', 'YOUR_CHANNEL_ID_HERE')
 
+# Опционально: SOCKS5/HTTP прокси для Telegram API (регионы с ограничениями).
+# Пример: socks5://user:pass@host:port или альяс TELEGRAM_PROXY (то же значение).
+TELEGRAM_PROXY_URL = os.getenv('TELEGRAM_PROXY_URL') or os.getenv('TELEGRAM_PROXY') or ''
+
 # Путь к базе данных Django на VPS
 DJANGO_DB_PATH = '/var/www/modelix/db.sqlite3'
 

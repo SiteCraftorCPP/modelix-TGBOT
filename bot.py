@@ -7,11 +7,11 @@ import json
 import os
 import time
 from datetime import datetime
-from telegram import Bot
 from telegram.error import TelegramError
 import logging
 
 from config import BOT_TOKEN, CHANNEL_ID, DJANGO_DB_PATH
+from telegram_client import create_telegram_bot, resolve_proxy_url
 
 # Настройка логирования
 logging.basicConfig(
@@ -25,7 +25,9 @@ class ModelixNotificationBot:
     """Бот для отправки уведомлений о заявках"""
     
     def __init__(self):
-        self.bot = Bot(token=BOT_TOKEN)
+        if resolve_proxy_url():
+            logger.info("Telegram API через прокси (TELEGRAM_PROXY_URL / TELEGRAM_PROXY)")
+        self.bot = create_telegram_bot(BOT_TOKEN)
         self.channel_id = CHANNEL_ID
         self.db_path = DJANGO_DB_PATH
         # Абсолютный путь к файлу состояния

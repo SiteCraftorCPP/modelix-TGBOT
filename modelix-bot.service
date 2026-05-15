@@ -1,18 +1,18 @@
 [Unit]
 Description=Modelix Telegram Notification Bot
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/var/www/modelix_deploy_final_fixed/tgbotModelixinfo
-Environment="TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN_HERE"
-Environment="TELEGRAM_CHANNEL_ID=YOUR_CHANNEL_ID_HERE"
-ExecStart=/usr/bin/python3 /var/www/modelix_deploy_final_fixed/tgbotModelixinfo/bot.py
+Group=www-data
+WorkingDirectory=/var/www/modelix-bot
+# TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID, TELEGRAM_PROXY_URL, опционально пути и т.д.
+EnvironmentFile=-/var/www/modelix-bot/.env
+ExecStart=/var/www/modelix-bot/venv/bin/python /var/www/modelix-bot/bot.py
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-
-
